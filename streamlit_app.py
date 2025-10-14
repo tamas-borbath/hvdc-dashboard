@@ -5,7 +5,7 @@ import streamlit as st
 import datetime as dt
 from datetime import datetime, timedelta
 from entsoe import EntsoePandasClient
-
+from copy import deepcopy
 
 # Constants
 
@@ -87,6 +87,44 @@ st.session_state.node_choice = node_choice
 if not node_choice:
     st.info("Select at least one interconnector to display results.")
     st.stop()
+
+
+IC_LIMITS_DEFAULT = deepcopy(IC_LIMITS)
+
+with st.sidebar.expander("Overwrite limits (MW)", expanded=False):
+    step_mw = st.number_input("Slider step [MW]", min_value=10, max_value=500, value=50, step=10)
+
+
+    ics_to_show = [ic for ic in IC_LIMITS_DEFAULT if ic in node_choice] or list(IC_LIMITS_DEFAULT.keys())
+    new_limits = {}
+    for ic in sorted(ics_to_show):
+        defaults = IC_LIMITS_DEFAULT.get(ic, {"export": DEFAULT_EXPORT_LIMIT, "import": DEFAULT_IMPORT_LIMIT})
+
+        # Per-IC slider range: from -import_default to +export_default
+        min_val = int(-defaults.get("import", DEFAULT_IMPORT_LIMIT))
+        max_val = int(+defaults.get("export", DEFAULT_EXPORT_LIMIT))
+        default_range = (min_val, max_val)
+
+        st.markdown(f"**{ic}**")
+        left, right = st.slider(
+            f"{ic} import/export range", key=f"{ic}-range",
+            min_value=min_val, max_value=max_val,
+            value=default_range, step=step_mw
+        )
+
+        import_limit = float(max(0, -left))   # left is negative
+        export_limit = float(max(0, right))   # right is positive
+
+        new_limits[ic] = {"export": export_limit, "import": import_limit}
+
+    # Keep any ICs not shown so lookups never break
+    for ic, vals in IC_LIMITS_DEFAULT.items():
+        new_limits.setdefault(ic, vals)
+
+# Replace the limits used downstream
+IC_LIMITS = new_limits
+
+
 
 if st.sidebar.button("🔄 Refresh data"):
     st.cache_data.clear()
