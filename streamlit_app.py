@@ -129,7 +129,8 @@ IC_LIMITS = new_limits
 if st.sidebar.button("🔄 Refresh data"):
     st.cache_data.clear()
 
-
+# Sidebar toggle
+suppress_errors = st.sidebar.checkbox("Suppress API warnings", value=False)
 
 def find_best_slot_cross(cross_df: pd.DataFrame, threshold: float = 100.0, offset_minutes: int = 0):
     """
@@ -224,7 +225,8 @@ def get_tp_net_schedules(
             return func(*args, **kwargs)
         except Exception as e:
             print(f"⚠️ Error during query: {qname}")
-            st.warning(f"Could not fetch data for {qname}. See console for details.")
+            if not suppress_errors:
+                st.warning(f"Could not fetch data for {qname}. See console for details.")
             print("   Exception:", e)
             return pd.Series(dtype=float)
 
