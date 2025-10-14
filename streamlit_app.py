@@ -12,8 +12,8 @@ from entsoe import EntsoePandasClient
 client = EntsoePandasClient(api_key=st.secrets["api_keys"]["transparency_platform"])
 print("Using TP client with key:", client.api_key[:8] + "...")
 IC_PAIRS = {
-    "IFA":  ("FR", "GB_IFA"),
-    "IFA2": ("FR", "GB_IFA2"),
+    "IFA":  ("FR", "10Y1001C--00098F"),
+    "IFA2": ("FR", "17Y0000009369493"),
     "Eleclink": ("FR", "11Y0-0000-0265-K"),
     "NemoLink": ("10YBE----------2", "10YGB----------A"),
     "BritNed":  ("10YNL----------L", "10YGB----------A"),
@@ -186,6 +186,7 @@ def get_tp_net_schedules(
             return func(*args, **kwargs)
         except Exception as e:
             print(f"⚠️ Error during query: {qname}")
+            st.warning(f"Could not fetch data for {qname}. See console for details.")
             print("   Exception:", e)
             return pd.Series(dtype=float)
 
@@ -283,21 +284,31 @@ df_capacity = (pd.concat(capa_rows, ignore_index=True)
 # --- Compose the working df (current view + optional DA overlay) ---
 work = df.copy() if df_da.empty else pd.concat([df, df_da], ignore_index=True)
 
-# Merge directional capacities (no model key so they apply generally)
-if not df_capacity.empty:
-    work = work.merge(df_capacity, on=["dt","pretty"], how="left")
+# Build an empty capacity frame with required columns when no rows
+if df_capacity is None or df_capacity.empty:
+    df_capacity = pd.DataFrame(columns=["dt", "pretty", "cap_export", "cap_import"])
 
-# Start from slider/defaults
+# Always merge so cap_* columns exist (they'll be NaN if no data)
+work = work.merge(df_capacity, on=["dt", "pretty"], how="left")
+
+
+# Start from slider/defaults (same as you had)
 work["limit_export"] = work["pretty"].map(lambda k: IC_LIMITS.get(k, {}).get("export", DEFAULT_EXPORT_LIMIT))
 work["limit_import"] = work["pretty"].map(lambda k: IC_LIMITS.get(k, {}).get("import", DEFAULT_IMPORT_LIMIT))
 
 # Override with TP capacities when available (directional!)
+# First, ensure numeric dtypes for all relevant columns
+for col in ["p_active", "cap_export", "cap_import", "limit_export", "limit_import"]:
+    if col not in work.columns:
+        work[col] = pd.NA
+    work[col] = pd.to_numeric(work[col], errors="coerce")
+
 has_cap_exp = work["cap_export"].notna()
 has_cap_imp = work["cap_import"].notna()
 work.loc[has_cap_exp, "limit_export"] = work.loc[has_cap_exp, "cap_export"]
 work.loc[has_cap_imp, "limit_import"] = work.loc[has_cap_imp, "cap_import"]
 
-# Headroom (same formulas; p_active positive means base→GB export)
+# Now safe to do arithmetic
 work["hr_export_mw"] = (work["limit_export"] - work["p_active"]).clip(lower=0)
 work["hr_import_mw"] = (work["p_active"] + work["limit_import"]).clip(lower=0)
 
@@ -337,6 +348,8 @@ work_view = work[work["pretty"].isin(node_choice)].copy()
 work_view["series"] = work_view["pretty"].astype(str) + " (" + work_view["model"].astype(str) + ")"
 
 models_present = sorted(work_view["model"].unique().tolist())
+if models_present == []:
+    st.error("No data available for the selected date/interconnector/model.")
 title_models = " vs ".join(models_present) if len(models_present) > 1 else models_present[0]
 
 # Wide headroom tables
