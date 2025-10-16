@@ -446,17 +446,17 @@ else:
     model_tag = "Day-Ahead" if model_choice.upper() == "DAY-AHEAD" else "Intraday"
 
     # Business hours and preferred morning window
-    BUSINESS_START, BUSINESS_END = 9, 16   # inclusive start, inclusive end-1 (i.e. 08:00–16:59)
+    BUSINESS_START, BUSINESS_END = 10, 16   # inclusive start, inclusive end-1 (i.e. 08:00–16:59)
     PREFERRED_END = 12                     # 08:00–11:59 is the preferred window
 
     # Filter to the selected model only
     df_model = cross_long_all[cross_long_all["model"] == model_tag].copy()
 
-    # 1) Try preferred morning window (08:00–12:00)
+    # 1) Try preferred morning window
     morning_mask = df_model["dt"].dt.hour.between(BUSINESS_START, PREFERRED_END - 1)
     best_time, best_pair, longest_duration = _best_slot_from_long(df_model[morning_mask])
 
-    # 2) If none, try full business hours (08:00–17:00)
+    # 2) If none, try full business hours
     if best_time is None:
         biz_mask = df_model["dt"].dt.hour.between(BUSINESS_START, BUSINESS_END)
         best_time, best_pair, longest_duration = _best_slot_from_long(df_model[biz_mask])
